@@ -1,0 +1,27 @@
+{
+  "name": "foresite-tracker",
+  "private": true,
+  "license": "MIT",
+  "description": "The Foresite Tracking Script. Open source so anyone can verify what it collects.",
+  "homepage": "https://foresite.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devontheriault/foresite-tracker.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc --noEmit && node build.mjs",
+    "test": "vitest run",
+    "verify": "node verify.mjs",
+    "size": "npm run build && gzip -c dist/foresite.js | wc -c"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "happy-dom": "^20.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}
