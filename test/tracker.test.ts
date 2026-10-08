@@ -153,4 +153,23 @@ describe('tracking script', () => {
     expect(sent[0].r).toBe('https://google.com/')
     expect(sent[1].r).toBeUndefined()
   })
+
+  it("sends only the referrer's scheme and host, never its path or query", () => {
+    const cases: [string, string][] = [
+      ['https://www.google.com/search?q=my+symptoms', 'https://www.google.com/'],
+      ['https://blog.someone.org:8443/posts/jane-doe?email=x@y.z#top', 'https://blog.someone.org:8443/'],
+      ['android-app://com.google.android.gm/', 'android-app://com.google.android.gm/'],
+    ]
+    for (const [referrer, want] of cases) expect(load({}, undefined, { referrer }).sent[0].r).toBe(want)
+  })
+
+  it('sends no #fragment and only the query parameters the collector uses', () => {
+    const { sent } = load(
+      {},
+      'https://example.com/welcome?utm_source=news&utm_campaign=fall%20sale&token=s3cret&email=x@y.z&ref=hn&gclid=Cj0KCQ-private&fbclid=IwAR&utm_medium#access_token=abc',
+    )
+    expect(sent[0].u).toBe('https://example.com/welcome?utm_source=news&utm_campaign=fall%20sale&ref=hn&gclid=1&utm_medium')
+    expect(load({}, 'https://example.com/a?x=1#/route').sent[0].u).toBe('https://example.com/a')
+    expect(load({}, 'https://example.com:8080/a?msclkid=xyz&source=tw').sent[0].u).toBe('https://example.com:8080/a?msclkid=1&source=tw')
+  })
 })

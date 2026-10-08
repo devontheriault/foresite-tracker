@@ -2,7 +2,7 @@
 
 This is the JavaScript that [Foresite](https://foresite.dev), a privacy-first web analytics service, runs on its customers' websites. It's open source so that anyone, whether a site owner, one of their visitors, or a regulator, can check what it collects instead of taking our word for it.
 
-The whole script is one file, [`src/foresite.ts`](src/foresite.ts), about 120 lines. It builds to about 1.5 KB of minified JavaScript, under 1 KB gzipped. Reading it takes a few minutes, and that read is the best check there is. This README summarises it and points to the code and tests behind each claim.
+The whole script is one file, [`src/foresite.ts`](src/foresite.ts), about 140 lines. It builds to about 1.9 KB of minified JavaScript, about 1.1 KB gzipped. Reading it takes a few minutes, and that read is the best check there is. This README summarises it and points to the code and tests behind each claim.
 
 ## What it does
 
@@ -18,8 +18,8 @@ It then sends one small request for each page a visitor loads, plus any events t
 |---|---|---|
 | `s` | The site's public ID, e.g. `s_abc123def456` | Always |
 | `n` | The event name: `pageview`, `404`, or a name the site chose, such as `signup` | Always |
-| `u` | The page's address (`location.href`) | Always |
-| `r` | The referring page (`document.referrer`) | Only with the first pageview after the page loads |
+| `u` | The page's address: its origin and path, plus only the query parameters Foresite uses. UTM campaign tags (`utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, and `ref` or `source`) are sent as they are. Ad click IDs (`gclid`, `gbraid`, `wbraid`, `msclkid`, `ttclid`, `twclid`, `li_fat_id`) are sent as `1`, because only their presence matters. Every other query parameter and the `#fragment` are left out | Always |
+| `r` | The referring site's scheme and host from `document.referrer`, e.g. `https://www.google.com/`, without its path or query | Only with the first pageview after the page loads |
 | `p` | Properties the site attached to its own event, e.g. `{ "plan": "pro" }` | Only for custom events, file downloads and outbound clicks |
 | `$` | An amount and currency the site attached to its own event | Only for custom events that have revenue |
 

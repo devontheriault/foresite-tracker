@@ -19,9 +19,9 @@
     "size": "npm run build && gzip -c dist/foresite.js | wc -c"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.2",
     "happy-dom": "^20.0.0",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.0"
+    "vitest": "^5.0.3"
   }
 }

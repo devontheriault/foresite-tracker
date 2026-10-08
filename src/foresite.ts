@@ -1,7 +1,9 @@
 // The Foresite Tracking Script.
 //
 // What it does, in full:
-//  - sends one request per pageview: the page URL, the referrer and the event name;
+//  - sends one request per pageview: the page's address (without the #fragment
+//    or any query parameter except campaign tags), the referring site (without
+//    its path) and the event name;
 //  - optionally sends Custom Events you call via window.foresite(), and Automatic
 //    Events (outbound clicks, file downloads, 404s) if you switched them on;
 //  - sets no cookies and stores nothing on the visitor's device. The single
@@ -60,9 +62,20 @@ const send = (name: string, opts?: Options): void => {
   } catch (_) {
     // Storage blocked: carry on.
   }
-  const body: Record<string, unknown> = { s: cfg.s, n: name, u: l.href }
-  // The referrer only matters for a Session's first event.
-  if (firstPageview && d.referrer) body.r = d.referrer
+  // The page's origin and path, plus only the query parameters the collector
+  // uses: campaign tags as they are, and ad click IDs as "1", since only their
+  // presence matters. Never the #fragment, which can hold e.g. an access token.
+  let q = ''
+  for (const p of l.search.slice(1).split('&')) {
+    const k = p.split('=')[0]
+    const m = /^(?:(utm_(?:source|medium|campaign|content|term)|ref|source)|gclid|gbraid|wbraid|msclkid|ttclid|twclid|li_fat_id)$/.exec(k)
+    if (m) q += (q ? '&' : '?') + (m[1] ? p : k + '=1')
+  }
+  const body: Record<string, unknown> = { s: cfg.s, n: name, u: l.origin + l.pathname + q }
+  // The referrer only matters for a Session's first event, and only its
+  // scheme and host are used.
+  const r = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+/i.exec(d.referrer)
+  if (firstPageview && r) body.r = r[0] + '/'
   if (name === 'pageview') firstPageview = false
   if (opts) {
     if (opts.props) body.p = opts.props
