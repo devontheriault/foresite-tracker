@@ -6,6 +6,8 @@
 //    its path) and the event name;
 //  - optionally sends Custom Events you call via window.foresite(), and Automatic
 //    Events (outbound clicks, file downloads, 404s) if you switched them on;
+//  - when the visitor leaves a page or hides its tab, sends how long the page
+//    was visible and how far down it was scrolled;
 //  - sets no cookies and stores nothing on the visitor's device. The single
 //    exception is Self-Exclusion: a site owner who opens their site with
 //    #foresite-ignore gets a flag in their own browser so their visits aren't counted.
@@ -49,7 +51,7 @@ try {
 
 let firstPageview = true
 
-const send = (name: string, opts?: Options): void => {
+const send = (name: string, opts?: Options | 0, extra?: object): void => {
   try {
     if (
       localStorage.getItem(IGNORE) ||
@@ -76,11 +78,15 @@ const send = (name: string, opts?: Options): void => {
   // scheme and host are used.
   const r = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+/i.exec(d.referrer)
   if (firstPageview && r) body.r = r[0] + '/'
-  if (name === 'pageview') firstPageview = false
+  if (name === 'pageview') {
+    firstPageview = false
+    page = body.u as string
+  }
   if (opts) {
     if (opts.props) body.p = opts.props
     if (opts.revenue) body.$ = { a: '' + opts.revenue.amount, c: opts.revenue.currency }
   }
+  Object.assign(body, extra)
   // A plain-text body keeps this a "simple" request, with no CORS preflight.
   fetch(cfg.e, { method: 'POST', body: JSON.stringify(body), keepalive: true, credentials: 'omit' }).catch(() => {})
 }
@@ -90,12 +96,45 @@ const send = (name: string, opts?: Options): void => {
 const queued: Call[] = (w.foresite && w.foresite.q) || []
 w.foresite = (name: string, opts?: Options) => name && send(name, opts)
 
+// Engagement: when the visitor hides the tab, closes it or moves to another
+// page, the page's address with how long it was visible (t, milliseconds) and
+// the deepest point scrolled to (d, as a fraction of the page's height).
+const root = d.documentElement
+let page: string | undefined // the address of the page being measured
+let shown = 0 // when it last became visible, or 0 while hidden
+let seen = 0 // visible milliseconds not yet reported
+let depth = 0
+const scrolled = (): void => {
+  const f = (w.scrollY + root.clientHeight) / root.scrollHeight
+  if (f > depth) depth = f
+}
+const tick = (): void => {
+  const now = Date.now()
+  if (shown) seen += now - shown
+  shown = d.hidden ? 0 : now
+}
+// Only when the page was on screen since the last report. A report counts the
+// page as left, as leaving can both fire pagehide and then hide it.
+const report = (): void => {
+  tick()
+  if (page && seen) send('engagement', 0, { u: page, t: seen, d: depth })
+  seen = shown = 0
+}
+d.addEventListener('visibilitychange', () => (d.hidden ? report() : tick()))
+// Leaving by a link doesn't always hide the page first.
+w.addEventListener('pagehide', report)
+w.addEventListener('scroll', scrolled)
+
 // Pageviews, including single-page-app navigations.
 let lastPath: string
 const pageview = (): void => {
   if (l.pathname !== lastPath) {
     lastPath = l.pathname
+    report() // the page being left
+    tick()
     send('pageview')
+    depth = 0
+    scrolled()
   }
 }
 const his = history

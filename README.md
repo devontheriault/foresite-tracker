@@ -2,7 +2,7 @@
 
 This is the JavaScript that [Foresite](https://foresite.dev), a privacy-first web analytics service, runs on its customers' websites. It's open source so that anyone, whether a site owner, one of their visitors, or a regulator, can check what it collects instead of taking our word for it.
 
-The whole script is one file, [`src/foresite.ts`](src/foresite.ts), about 140 lines. It builds to about 1.9 KB of minified JavaScript, about 1.1 KB gzipped. Reading it takes a few minutes, and that read is the best check there is. This README summarises it and points to the code and tests behind each claim.
+The whole script is one file, [`src/foresite.ts`](src/foresite.ts), about 180 lines. It builds to about 2.3 KB of minified JavaScript, about 1.3 KB gzipped. Reading it takes a few minutes, and that read is the best check there is. This README summarises it and points to the code and tests behind each claim.
 
 ## What it does
 
@@ -12,20 +12,23 @@ A site loads it with one line:
 <script defer src="https://t.foresite.dev/s/YOUR_SITE_ID.js"></script>
 ```
 
-It then sends one small request for each page a visitor loads, plus any events the site owner chose to measure. Each request is a `POST` of a JSON body to the Foresite collector, with these fields and nothing else ([`send()` in `src/foresite.ts`](src/foresite.ts)):
+It then sends one small request for each page a visitor loads, one when they leave it, plus any events the site owner chose to measure. Each request is a `POST` of a JSON body to the Foresite collector, with these fields and nothing else ([`send()` in `src/foresite.ts`](src/foresite.ts)):
 
 | Field | Contents | When |
 |---|---|---|
 | `s` | The site's public ID, e.g. `s_abc123def456` | Always |
-| `n` | The event name: `pageview`, `404`, or a name the site chose, such as `signup` | Always |
+| `n` | The event name: `pageview`, `engagement`, `404`, or a name the site chose, such as `signup` | Always |
 | `u` | The page's address: its origin and path, plus only the query parameters Foresite uses. UTM campaign tags (`utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, and `ref` or `source`) are sent as they are. Ad click IDs (`gclid`, `gbraid`, `wbraid`, `msclkid`, `ttclid`, `twclid`, `li_fat_id`) are sent as `1`, because only their presence matters. Every other query parameter and the `#fragment` are left out | Always |
 | `r` | The referring site's scheme and host from `document.referrer`, e.g. `https://www.google.com/`, without its path or query | Only with the first pageview after the page loads |
 | `p` | Properties the site attached to its own event, e.g. `{ "plan": "pro" }` | Only for custom events, file downloads and outbound clicks |
 | `$` | An amount and currency the site attached to its own event | Only for custom events that have revenue |
+| `t` | How long the page was visible, in milliseconds, since it was last reported | Only for `engagement` |
+| `d` | The deepest point the page was scrolled to, as a fraction of its height: `0.5` is halfway, `1` is the bottom | Only for `engagement` |
 
 What triggers a request:
 
 - **Pageviews.** One when the page loads, and one each time a single-page app moves to a new path (`history.pushState` or the back button). Going to the path the visitor is already on doesn't send another one. Tests: *sends one pageview with url and site on load*, *tracks single-page-app navigations once per path*, *sends the referrer only with the first pageview*.
+- **Engagement**, when the visitor hides the tab, closes it or moves to another page, including within a single-page app. It's sent for the page being left, with its address (the same as its pageview's), how long it was visible and how far down it was scrolled. Time spent in another tab isn't counted. Tests: *reports visible time when the tab is hidden, not counting time away*, *reports the page being left on a single-page-app navigation, at its own address*, *reports the deepest point scrolled to, as a fraction of the page*.
 - **Custom events** that the site's own code sends with `window.foresite('signup', { props: { plan: 'pro' } })`. Test: *sends custom events with props and revenue*.
 - **Automatic events**, each one off unless the site owner turns it on: clicks on links to other websites, clicks on links to files (`.pdf`, `.zip` and so on), and pages that return a 404. For clicked links, only the link's origin and path are sent and the query string is dropped, because query strings can contain personal data. Tests: *sends outbound clicks only when enabled, without query strings*, *sends file downloads when enabled*.
 
@@ -57,7 +60,7 @@ Every request is made with `fetch(..., { credentials: 'omit' })`, so the browser
 
 ### No fingerprinting
 
-The script reads only what it needs to describe the page: the page address (`location`), the referrer (`document.referrer`), the automation flag (`navigator.webdriver`, so that bots aren't counted), and, only when 404 tracking is on, the HTTP status of the page load (`performance.getEntriesByType('navigation')`). It never reads the user agent, platform, languages, plugins, screen size, pixel ratio, time zone, hardware details, canvas, WebGL or audio. Those are what fingerprinting scripts use to tell browsers apart.
+The script reads only what it needs to describe the page: the page address (`location`), the referrer (`document.referrer`), the automation flag (`navigator.webdriver`, so that bots aren't counted), whether the page is visible (`document.hidden`), how far it's scrolled (`scrollY`, and the height of the page and of the part on screen, `scrollHeight` and `clientHeight`, from which only the fraction scrolled is sent), and, only when 404 tracking is on, the HTTP status of the page load (`performance.getEntriesByType('navigation')`). It never reads the user agent, platform, languages, plugins, screen size, pixel ratio, time zone, hardware details, canvas, WebGL or audio. Those are what fingerprinting scripts use to tell browsers apart.
 
 - Test: *reads nothing from the browser that could fingerprint a visitor* runs the script with every feature on. It records every property read from `navigator` and fails if anything other than `webdriver` is read. It also fails if any of those fingerprinting APIs appears in the build.
 

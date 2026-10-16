@@ -1,5 +1,5 @@
 import { Window } from 'happy-dom'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 // @ts-expect-error: plain JavaScript module
 import { buildScript } from '../build.mjs'
 
@@ -11,7 +11,7 @@ beforeAll(async () => {
 
 const ENDPOINT = 'https://t.foresite.dev/e'
 
-type Sent = { s: string; n: string; u: string; r?: string; p?: Record<string, unknown>; $?: { a: string; c: string } }
+type Sent = { s: string; n: string; u: string; r?: string; p?: Record<string, unknown>; $?: { a: string; c: string }; t?: number; d?: number }
 
 interface Loaded {
   win: Window
@@ -96,7 +96,7 @@ describe('tracking script', () => {
     win.history.pushState({}, '', '/about')
     win.history.pushState({}, '', '/about')
     win.history.pushState({}, '', '/contact')
-    expect(sent.map((e) => e.u)).toEqual([
+    expect(sent.filter((e) => e.n === 'pageview').map((e) => e.u)).toEqual([
       'https://example.com/pricing',
       'https://example.com/about',
       'https://example.com/contact',
@@ -151,7 +151,8 @@ describe('tracking script', () => {
     const { win, sent } = load({}, undefined, { referrer: 'https://google.com/' })
     win.history.pushState({}, '', '/next')
     expect(sent[0].r).toBe('https://google.com/')
-    expect(sent[1].r).toBeUndefined()
+    expect(sent.filter((e) => e.n === 'pageview')[1].r).toBeUndefined()
+    expect(sent.every((e, i) => i === 0 || e.r === undefined)).toBe(true)
   })
 
   it("sends only the referrer's scheme and host, never its path or query", () => {
@@ -171,5 +172,76 @@ describe('tracking script', () => {
     expect(sent[0].u).toBe('https://example.com/welcome?utm_source=news&utm_campaign=fall%20sale&ref=hn&gclid=1&utm_medium')
     expect(load({}, 'https://example.com/a?x=1#/route').sent[0].u).toBe('https://example.com/a')
     expect(load({}, 'https://example.com:8080/a?msclkid=xyz&source=tw').sent[0].u).toBe('https://example.com:8080/a?msclkid=1&source=tw')
+  })
+
+  describe('engagement', () => {
+    afterEach(() => vi.useRealTimers())
+    const T0 = Date.UTC(2026, 6, 1)
+
+    const hide = (win: Window, hidden: boolean) => {
+      Object.defineProperty(win.document, 'hidden', { value: hidden, configurable: true })
+      win.document.dispatchEvent(new win.Event('visibilitychange'))
+    }
+
+    it('reports visible time when the tab is hidden, not counting time away', () => {
+      vi.useFakeTimers({ now: T0, toFake: ['Date'] })
+      const { win, sent } = load({})
+      vi.setSystemTime(T0 + 5_000)
+      hide(win, true)
+      vi.setSystemTime(T0 + 65_000) // a minute in another tab
+      hide(win, false)
+      vi.setSystemTime(T0 + 68_000)
+      hide(win, true)
+      expect(sent.slice(1)).toEqual([
+        { s: 's_test', n: 'engagement', u: 'https://example.com/pricing', t: 5_000, d: 0 },
+        { s: 's_test', n: 'engagement', u: 'https://example.com/pricing', t: 3_000, d: 0 },
+      ])
+    })
+
+    it('reports the page being left on a single-page-app navigation, at its own address', () => {
+      vi.useFakeTimers({ now: T0, toFake: ['Date'] })
+      const { win, sent } = load({}, 'https://example.com/pricing?utm_source=news')
+      vi.setSystemTime(T0 + 2_000)
+      win.history.pushState({}, '', '/about')
+      expect(sent.map((e) => [e.n, e.u, e.t])).toEqual([
+        ['pageview', 'https://example.com/pricing?utm_source=news', undefined],
+        ['engagement', 'https://example.com/pricing?utm_source=news', 2_000],
+        ['pageview', 'https://example.com/about', undefined],
+      ])
+    })
+
+    it('reports once when leaving a page both hides it and fires pagehide', () => {
+      vi.useFakeTimers({ now: T0, toFake: ['Date'] })
+      const { win, sent } = load({})
+      vi.setSystemTime(T0 + 4_000)
+      win.dispatchEvent(new win.Event('pagehide'))
+      vi.setSystemTime(T0 + 4_005)
+      hide(win, true)
+      expect(sent.slice(1).map((e) => [e.n, e.t])).toEqual([['engagement', 4_000]])
+    })
+
+    it('reports the deepest point scrolled to, as a fraction of the page', () => {
+      vi.useFakeTimers({ now: T0, toFake: ['Date'] })
+      const { win, sent } = load({})
+      vi.setSystemTime(T0 + 1_000)
+      const root = win.document.documentElement
+      Object.defineProperty(root, 'clientHeight', { value: 800 })
+      Object.defineProperty(root, 'scrollHeight', { value: 3_200 })
+      const scrollTo = (y: number) => {
+        Object.defineProperty(win, 'scrollY', { value: y, configurable: true })
+        win.dispatchEvent(new win.Event('scroll'))
+      }
+      scrollTo(1_600)
+      scrollTo(400)
+      hide(win, true)
+      expect(sent[1].d).toBe(0.75)
+    })
+
+    it('sends nothing for a Self-Excluded browser', () => {
+      const storage = new Map([['foresite_ignore', '1']])
+      const { win, sent } = load({}, 'https://example.com/', { storage })
+      hide(win, true)
+      expect(sent).toEqual([])
+    })
   })
 })
