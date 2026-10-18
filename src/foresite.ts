@@ -137,11 +137,14 @@ const pageview = (): void => {
     scrolled()
   }
 }
+// Routers move with pushState, and redirect with replaceState.
 const his = history
-const push = his.pushState
-his.pushState = function (this: History, ...args: Parameters<History['pushState']>) {
-  push.apply(this, args)
-  pageview()
+for (const m of ['pushState', 'replaceState'] as const) {
+  const orig = his[m]
+  his[m] = function (this: History, ...args: Parameters<History['pushState']>) {
+    orig.apply(this, args)
+    pageview()
+  }
 }
 w.addEventListener('popstate', pageview)
 pageview()

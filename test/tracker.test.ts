@@ -103,6 +103,17 @@ describe('tracking script', () => {
     ])
   })
 
+  it('tracks navigations that replace the history entry, such as redirects, once per path', () => {
+    const { win, sent } = load({})
+    win.history.replaceState({}, '', '/pricing?plan=pro')
+    win.history.replaceState({}, '', '/standings')
+    win.history.replaceState({}, '', '/standings?season=2025')
+    expect(sent.filter((e) => e.n === 'pageview').map((e) => e.u)).toEqual([
+      'https://example.com/pricing',
+      'https://example.com/standings',
+    ])
+  })
+
   it('sends custom events with props and revenue, including calls queued before load', () => {
     const { win, sent } = load({}, undefined, { queued: [['early', { props: { a: 1 } }]] })
     ;(win as any).foresite('purchase', { props: { plan: 'pro' }, revenue: { amount: 19.99, currency: 'USD' } })
